@@ -207,11 +207,10 @@
             .search-wrapper { min-height:54px; padding:9px 12px; border-radius:17px; }
             .search-wrapper input { font-size:16px; } /* evita zoom automático no iOS */
             .search-wrapper i.fa-crosshairs { font-size:1.05rem; margin-right:9px; padding:5px; }
-            .search-wrapper i.fa-child-reaching#btn-filtro-jovem { font-size:1rem; margin-right:9px; padding:5px; }
             .search-wrapper i.fa-search { font-size:1rem; padding:7px; }
             .sugestoes-lista { top:59px; max-height:34vh; border-radius:14px; }
             .sugestoes-lista li { padding:14px; font-size:.88rem; }
-            .mobile-hint { top:151px; font-size:.73rem; padding:7px 12px; }
+            .mobile-hint { top:202px; font-size:.73rem; padding:7px 12px; }
             .lead-capture { bottom:16px; width:calc(100% - 24px); border-radius:18px; padding:13px 15px; }
             .lead-header { font-size:.86rem; }
             .gps-fab { bottom:112px; right:14px; }
@@ -318,19 +317,27 @@ body, html { background:#f7f9fc; }
 .search-wrapper i.fa-search {
     color:var(--brand-navy);
 }
-.search-wrapper i.fa-child-reaching#btn-filtro-jovem {
-    color:var(--text-muted);
-    font-size:1.05rem;
-    margin-right:12px;
-    padding:4px;
-    border-radius:8px;
-    cursor:pointer;
-    transition:color .18s ease, background .18s ease;
+
+/* Chip "Somente Grupos Jovens" — texto visível em vez de ícone isolado,
+   pra não depender de um glifo que pode não existir na versão do Font Awesome. */
+.filtro-jovem-chip {
+    display:flex; align-items:center; gap:7px; width:max-content;
+    margin:10px auto 0; padding:8px 16px;
+    background:rgba(255,255,255,.95); color:var(--brand-navy);
+    border:1px solid rgba(18,59,93,.16); border-radius:999px;
+    font-size:.85rem; font-weight:600; cursor:pointer;
+    box-shadow:0 4px 14px rgba(18,59,93,.10);
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+    transition:background .18s ease, color .18s ease, transform .12s ease;
 }
-.search-wrapper i.fa-child-reaching#btn-filtro-jovem.active {
-    color:#fff;
-    background:var(--accent-light-blue);
+.filtro-jovem-chip i { color:#f4512c; }
+.filtro-jovem-chip:active { transform:scale(.97); }
+.filtro-jovem-chip.active {
+    background:var(--accent-light-blue); color:#fff;
+    border-color:var(--accent-light-blue);
 }
+.filtro-jovem-chip.active i { color:#fff; }
+
 .search-wrapper input {
     color:var(--text-main);
     font-size:16px; /* evita zoom automático do Safari */
@@ -436,6 +443,8 @@ body, html { background:#f7f9fc; }
     color:var(--accent-light-blue);
     background:#fff;
 }
+.btn-agenda { font-size:.88rem; padding:13px 8px; gap:7px; }
+@media (max-width: 360px) { .btn-agenda { font-size:.78rem; } }
 
 /* Mobile: prioriza legibilidade e área útil do mapa no Safari. */
 @media (max-width: 600px) {
@@ -480,7 +489,7 @@ body, html { background:#f7f9fc; }
     }
 
     .mobile-hint {
-        top:151px;
+        top:202px;
         max-width:90%;
         padding:7px 11px;
         font-size:.74rem;
@@ -546,10 +555,12 @@ body, html { background:#f7f9fc; }
         <div class="search-wrapper">
             <i class="fas fa-crosshairs" id="btn-gps" style="cursor:pointer;" title="Usar minha localização"></i>
             <input type="text" id="endereco" placeholder="Digite rua, cidade ou CEP (ex: 88010-000)...">
-            <i class="fas fa-child-reaching" id="btn-filtro-jovem" title="Mostrar só Grupos Jovens"></i>
             <i class="fas fa-search" id="btn-buscar"></i>
         </div>
         <ul id="sugestoes-endereco" class="sugestoes-lista"></ul>
+        <button type="button" id="btn-filtro-jovem" class="filtro-jovem-chip">
+            <i class="fas fa-fire"></i> Somente Grupos Jovens
+        </button>
     </div>
 
     <div id="map"></div>
@@ -615,9 +626,14 @@ body, html { background:#f7f9fc; }
             <div class="section-body" id="sheet-reuniao">Segunda-feira / 20H</div>
 
             <div class="btn-group" style="display:flex; flex-direction:column; gap:12px;">
-                <button class="btn-solid" onclick="adicionarAgenda()">
-                    <i class="fas fa-calendar-plus"></i> Adicionar à Agenda
-                </button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-solid btn-agenda" onclick="adicionarGoogleAgenda()">
+                        <i class="fab fa-google"></i> Google Agenda
+                    </button>
+                    <button class="btn-solid btn-agenda" onclick="adicionarICS()">
+                        <i class="fab fa-apple"></i> iPhone / .ics
+                    </button>
+                </div>
                 <button class="btn-solid" style="background:transparent; border:1.5px solid var(--accent-light-blue); color:var(--accent-light-blue);" onclick="reportarErro()">
                     <i class="fas fa-exclamation-triangle"></i> Reportar erro neste Grupo
                 </button>
@@ -989,29 +1005,76 @@ body, html { background:#f7f9fc; }
             const pad = n => String(n).padStart(2, '0');
             return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
         }
+        function formatarGoogleDate(d) {
+            // O parâmetro "dates" do Google Calendar espera horário em UTC (sufixo Z).
+            // Convertendo a partir do horário local, o evento aparece certo em qualquer fuso.
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
+        }
 
         function escapeICS(texto) {
             return String(texto || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
         }
 
-        function adicionarAgenda() {
-            if (!grupoAtual) return;
-
-            const infoHorario = parseDiaHorario(grupoAtual['Reunião']);
-            if (!infoHorario) {
-                alert('Não conseguimos identificar automaticamente o dia da semana no horário cadastrado ("' + (grupoAtual['Reunião'] || 'não informado') + '"). Confirme o dia com o coordenador do grupo.');
-                return;
-            }
-
+        // Calcula a data/hora do próximo encontro (início) e do fim (1h30 depois),
+        // a partir do dia da semana e horário reconhecidos no texto do "Horário do Encontro".
+        function calcularProximaOcorrencia(infoHorario) {
             const agora = new Date();
             const inicio = new Date();
             inicio.setHours(infoHorario.hora, infoHorario.minuto, 0, 0);
             let diffDias = (infoHorario.diaSemana - agora.getDay() + 7) % 7;
             if (diffDias === 0 && inicio < agora) diffDias = 7;
             inicio.setDate(agora.getDate() + diffDias);
-
             const fim = new Date(inicio.getTime() + 90 * 60 * 1000); // duração padrão: 1h30
+            return { inicio, fim };
+        }
 
+        function validarGrupoAgenda() {
+            if (!grupoAtual) return null;
+            const infoHorario = parseDiaHorario(grupoAtual['Reunião']);
+            if (!infoHorario) {
+                alert('Não conseguimos identificar automaticamente o dia da semana no horário cadastrado ("' + (grupoAtual['Reunião'] || 'não informado') + '"). Confirme o dia com o coordenador do grupo.');
+                return null;
+            }
+            return infoHorario;
+        }
+
+        // Botão "Google Agenda": abre direto a tela de criar evento do Google Calendar,
+        // já preenchida e recorrente semanalmente. Funciona em qualquer navegador/SO
+        // (Android, desktop, iPhone) sem precisar baixar nenhum arquivo.
+        function adicionarGoogleAgenda() {
+            const infoHorario = validarGrupoAgenda();
+            if (!infoHorario) return;
+
+            const { inicio, fim } = calcularProximaOcorrencia(infoHorario);
+            const nomeGrupo = grupoAtual.Nome || 'Grupo de Oração RCC';
+            const endereco = `${grupoAtual['Endereço'] || ''}, ${grupoAtual.Cidade || ''}`.trim();
+            const descricao = `Grupo de Oração da RCC ArquiFloripa.\nCoordenador(a): ${grupoAtual.Coordenador || 'não informado'}\nTelefone: ${grupoAtual.Telefone || 'não informado'}`;
+            // Usa o dia da semana em UTC (não o local) porque as datas enviadas ao Google
+            // já estão convertidas pra UTC — evita que reuniões tarde da noite "pulem" de dia.
+            const diaGoogle = RRULE_DIA[inicio.getUTCDay()];
+
+            const params = new URLSearchParams({
+                action: 'TEMPLATE',
+                text: nomeGrupo,
+                dates: `${formatarGoogleDate(inicio)}/${formatarGoogleDate(fim)}`,
+                details: descricao,
+                location: endereco,
+                recur: `RRULE:FREQ=WEEKLY;BYDAY=${diaGoogle}`
+            });
+
+            window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, '_blank');
+        }
+
+        // Botão "iPhone / .ics": no Safari/iOS, o download via <a download> costuma falhar
+        // silenciosamente. O método que realmente funciona é navegar direto para um Data URI
+        // com o tipo "text/calendar" — o Safari reconhece e abre a tela "Adicionar ao Calendário".
+        // Em outros navegadores (Android/desktop), usamos Blob + download, que é mais confiável ali.
+        function adicionarICS() {
+            const infoHorario = validarGrupoAgenda();
+            if (!infoHorario) return;
+
+            const { inicio, fim } = calcularProximaOcorrencia(infoHorario);
             const nomeGrupo = grupoAtual.Nome || 'Grupo de Oração RCC';
             const endereco = `${grupoAtual['Endereço'] || ''}, ${grupoAtual.Cidade || ''}`.trim();
             const descricao = `Grupo de Oração da RCC ArquiFloripa.\nCoordenador(a): ${grupoAtual.Coordenador || 'não informado'}\nTelefone: ${grupoAtual.Telefone || 'não informado'}`;
@@ -1036,15 +1099,24 @@ body, html { background:#f7f9fc; }
                 'END:VCALENDAR'
             ].join('\r\n');
 
-            const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${nomeGrupo.replace(/[^\w\-]+/g, '_')}.ics`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 4000);
+            const ehIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+                          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS moderno se identifica como Mac
+
+            if (ehIOS) {
+                // Navegação direta (sem <a download>) é o que faz o Safari/iOS reconhecer
+                // o arquivo de calendário e abrir a tela de importação.
+                window.location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
+            } else {
+                const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${nomeGrupo.replace(/[^\w\-]+/g, '_')}.ics`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+            }
         }
 
         function reportarErro() {
