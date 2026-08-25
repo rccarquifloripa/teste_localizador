@@ -267,7 +267,8 @@
         <div class="lead-body">
             <input type="text" id="lead-nome" class="lead-input" placeholder="Seu nome completo">
             <input type="tel" id="lead-tel" class="lead-input" placeholder="Seu WhatsApp (com DDD)">
-            <button class="lead-btn" onclick="enviarContato()">Enviar meu Contato <i class="fas fa-paper-plane" style="margin-left: 5px;"></i></button>
+            <button class="lead-btn" id="lead-submit" onclick="enviarContato()">Enviar meu Contato <i class="fas fa-paper-plane" style="margin-left: 5px;"></i></button>
+            <small id="lead-status" style="display:none; color:var(--text-muted); text-align:center; line-height:1.35;"></small>
         </div>
     </div>
 
@@ -325,6 +326,10 @@
         let userPin = null;
 
         const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW50b25pb2lyYW5lIiwiYSI6ImNtbXpsdnJzZjA5bXQycnB3bTZnN256OTcifQ.XHCq9FVuKZ2kWyazFD0p_w';
+
+        // URL do Web App do Google Apps Script que grava os contatos na aba "Contatos".
+        // Depois de publicar o Apps Script, cole aqui a URL /exec.
+        const APPS_SCRIPT_URL = 'COLE_AQUI_A_URL_DO_APPS_SCRIPT';
         
         var map = L.map('map', { 
             zoomControl: false, 
@@ -536,24 +541,74 @@
 
         function toggleLeadForm() { leadCapture.classList.toggle('open'); }
 
-        function enviarContato() {
-            const nome = document.getElementById('lead-nome').value;
-            const tel = document.getElementById('lead-tel').value;
+        async function enviarContato() {
+            const nomeEl = document.getElementById('lead-nome');
+            const telEl = document.getElementById('lead-tel');
+            const btnEl = document.getElementById('lead-submit');
+            const statusEl = document.getElementById('lead-status');
+            const nome = nomeEl.value.trim();
+            const tel = telEl.value.trim();
 
-            if(!nome || !tel) { alert("Por favor, preencha nome e WhatsApp."); return; }
+            if(!nome || !tel) {
+                alert("Por favor, preencha nome e WhatsApp.");
+                return;
+            }
 
-            const numeroCentralRCC = "5548999999999"; 
-            const msg = encodeURIComponent(`A paz de Cristo! Gostaria de ajuda para encontrar um Grupo de Oração.\n\n*Meu nome:* ${nome}\n*Meu contato:* ${tel}`);
-            window.open(`https://wa.me/${numeroCentralRCC}?text=${msg}`, '_blank');
-            document.getElementById('lead-nome').value = ''; document.getElementById('lead-tel').value = '';
-            toggleLeadForm();
+            if (APPS_SCRIPT_URL === 'COLE_AQUI_A_URL_DO_APPS_SCRIPT') {
+                alert('O formulário ainda não foi conectado à planilha.');
+                return;
+            }
+
+            btnEl.disabled = true;
+            btnEl.style.opacity = '0.65';
+            statusEl.style.display = 'block';
+            statusEl.textContent = 'Enviando seu contato...';
+
+            const dados = new URLSearchParams();
+            dados.append('acao', 'novo_contato');
+            dados.append('nome', nome);
+            dados.append('whatsapp', tel);
+            dados.append('origem', 'Localizador RCC ArquiFloripa');
+            dados.append('pagina', window.location.href);
+
+            try {
+                // POST simples para funcionar também no Safari/iPhone sem depender de CORS.
+                await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    body: dados.toString()
+                });
+
+                statusEl.textContent = 'Pronto! Recebemos seu contato. Em breve entraremos em contato.';
+                nomeEl.value = '';
+                telEl.value = '';
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                    toggleLeadForm();
+                }, 2200);
+            } catch (erro) {
+                console.error('Erro ao enviar contato:', erro);
+                statusEl.textContent = 'Não conseguimos enviar agora. Tente novamente em instantes.';
+            } finally {
+                btnEl.disabled = false;
+                btnEl.style.opacity = '1';
+            }
         }
 
         function reportarErro() {
             const nomeGrupo = document.getElementById('sheet-nome').textContent;
-            const numeroCentralRCC = "5548999999999"; 
-            const msg = encodeURIComponent(`A paz! Quero reportar uma atualização/erro no Grupo de Oração: *${nomeGrupo}*`);
-            window.open(`https://wa.me/${numeroCentralRCC}?text=${msg}`, '_blank');
+            const enderecoGrupo = document.getElementById('sheet-endereco').innerText.replace(/\n/g, ' - ');
+            const telefoneGrupo = document.getElementById('sheet-tel').textContent;
+            const numeroEscritorio = '5548996051129';
+            const msg = encodeURIComponent(
+                `A paz! Quero reportar uma atualização/erro no Localizador RCC.\n\n` +
+                `*Grupo:* ${nomeGrupo}\n` +
+                `*Endereço:* ${enderecoGrupo}\n` +
+                `*Contato cadastrado:* ${telefoneGrupo}\n\n` +
+                `Gostaria de informar a correção necessária.`
+            );
+            window.open(`https://wa.me/${numeroEscritorio}?text=${msg}`, '_blank');
         }
 
         const enderecoInput = document.getElementById('endereco');
