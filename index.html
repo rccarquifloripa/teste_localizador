@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Grupos de Oração - RCC</title>
     
+    <!-- Ícones e CSS do Leaflet -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- CSS do MarkerCluster (Para agrupar/desmembrar pinos na mesma localização) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
 
     <style>
         :root {
@@ -56,6 +60,16 @@
             text-shadow: 0px 0px 15px rgba(56, 189, 248, 0.8); cursor: pointer; transition: transform 0.2s;
         }
         .flame-pin:hover { transform: scale(1.1); }
+
+        /* Customização dos clusters de contagem de pinos no mesmo lugar */
+        .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+            background-color: rgba(56, 189, 248, 0.3) !important;
+        }
+        .marker-cluster div {
+            background-color: var(--accent-light-blue) !important;
+            color: #0f172a !important;
+            font-weight: bold;
+        }
 
         .custom-gps-icon { background: none; border: none; }
         .gps-pulse {
@@ -205,14 +219,15 @@
         </div>
     </div>
 
+    <!-- Scripts do Leaflet e do MarkerCluster -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     
     <script>
         let gruposDeOracao = []; 
         let userLocation = null;
         let userPin = null;
-        const marcadores = [];
 
         const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW50b25pb2lyYW5lIiwiYSI6ImNtbXpsdnJzZjA5bXQycnB3bTZnN256OTcifQ.XHCq9FVuKZ2kWyazFD0p_w';
         
@@ -221,10 +236,19 @@
             attribution: '© Mapbox', maxZoom: 20
         }).addTo(map);
 
+        // Grupo de Clusters com Spiderfy Ativado (Separa grupos com a mesma coordenada)
+        var markersClusterGroup = L.markerClusterGroup({
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true,
+            maxClusterRadius: 20 // Agrupa pinos que fiquem muito colados no zoom
+        });
+        map.addLayer(markersClusterGroup);
+
         var flameIcon = L.divIcon({ html: '<i class="fas fa-fire flame-pin"></i>', className: '', iconSize: [34, 34], iconAnchor: [17, 34] });
         var gpsIcon = L.divIcon({ html: '<div class="gps-pulse"></div>', className: 'custom-gps-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
 
-        const linkPlanilha = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0wjHsXhDKkoVvTYAM1eN9RcReJf94pKepJpC61ROScImR1RqkpNvVgQQ6u8cUjmMwasV8-XSjlXa4/pub?output=csv";
+        const linkPlanilha = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0wjHsXhDKkoVvTYAM1eN9RcReJf94pKepJpC61ROScImR1RqkpNvNvVgQQ6u8cUjmMwasV8-XSjlXa4/pub?output=csv";
 
         Papa.parse(linkPlanilha, {
             download: true,
@@ -234,11 +258,13 @@
             complete: function(resultados) {
                 gruposDeOracao = resultados.data.filter(g => g.Latitude && g.Longitude && g.Latitude.trim() !== "");
                 plotarGruposNoMapa();
-                obterLocalizacaoEZoom(false); // Solicita a localização após carregar os dados
+                obterLocalizacaoEZoom(false);
             }
         });
         
         function plotarGruposNoMapa() {
+            markersClusterGroup.clearLayers();
+
             gruposDeOracao.forEach(grupo => {
                 const latStr = String(grupo.Latitude).replace(',', '.').trim();
                 const lonStr = String(grupo.Longitude).replace(',', '.').trim();
@@ -247,9 +273,9 @@
                 const lon = parseFloat(lonStr);
                 
                 if(!isNaN(lat) && !isNaN(lon)) {
-                    const marker = L.marker([lat, lon], { icon: flameIcon }).addTo(map);
+                    const marker = L.marker([lat, lon], { icon: flameIcon });
                     marker.on('click', () => abrirPainel(grupo, false));
-                    marcadores.push({ marker, grupo });
+                    markersClusterGroup.addLayer(marker);
                 }
             });
         }
@@ -431,7 +457,6 @@
 
             loading.style.display = 'none';
 
-            // Ajusta o zoom focando na posição do usuário e nos grupos do entorno (zoom 15)
             map.flyTo([lat, lon], 15, { duration: 1.5 });
 
             if (maisPerto && abrirCardAutomatico) {
