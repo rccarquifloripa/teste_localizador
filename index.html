@@ -149,6 +149,10 @@
         .brand-logos img { width:auto; object-fit:contain; }
         .brand-logo-rcc { height:52px; }
         .brand-logo-arq { height:56px; }
+        .location-message-actions { display:flex; gap:18px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+        .location-message-actions button { border:0; background:none; padding:0; font:inherit; font-weight:700; color:var(--accent-light-blue); cursor:pointer; }
+        .location-message-actions button:last-child { color:var(--text-muted); font-weight:500; }
+        .location-message { z-index:1600; }
         @media (max-width: 600px) {
             .brand-logos { gap:6px; }
             .brand-logo-rcc { height:38px; }
@@ -188,6 +192,10 @@
         .location-message button { margin-top:8px; border:0; background:transparent; color:var(--accent-light-blue); font-weight:700; padding:0; cursor:pointer; }
         .search-wrapper { transition: transform .2s ease, box-shadow .2s ease; }
         .search-wrapper:focus-within { box-shadow:0 6px 26px rgba(0,0,0,.38), 0 0 0 2px rgba(56,189,248,.12); }
+        .location-message-actions { display:flex; gap:18px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+        .location-message-actions button { border:0; background:none; padding:0; font:inherit; font-weight:700; color:var(--accent-light-blue); cursor:pointer; }
+        .location-message-actions button:last-child { color:var(--text-muted); font-weight:500; }
+        .location-message { z-index:1600; }
         @media (max-width: 600px) {
             .top-header { height:78px; padding:10px 14px; align-items:center; }
             .header-title { font-size:.92rem; padding:0; max-width:52%; line-height:1.15; }
@@ -245,7 +253,10 @@
     <div class="location-message" id="location-message">
         <strong id="location-message-title">Não conseguimos acessar sua localização.</strong>
         <span id="location-message-text">Você pode permitir o acesso à localização nas configurações do Safari ou pesquisar sua cidade acima.</span>
-        <button type="button" id="location-message-action">Tentar novamente</button>
+        <div class="location-message-actions">
+            <button type="button" id="location-message-action">Tentar novamente</button>
+            <button type="button" id="location-message-close" aria-label="Fechar aviso">Continuar sem localização</button>
+        </div>
     </div>
 
     <div class="lead-capture" id="lead-capture">
@@ -367,7 +378,8 @@
             complete: function(resultados) {
                 gruposDeOracao = resultados.data.filter(g => g.Latitude && g.Longitude && g.Latitude.trim() !== "");
                 plotarGruposNoMapa();
-                obterLocalizacaoPorIP(false);
+                // Não solicita nem tenta descobrir a localização automaticamente.
+                // O usuário pode navegar normalmente e usar endereço/CEP ou o botão GPS.
             }
         });
         
@@ -391,16 +403,18 @@
         }
 
         // Geolocalização: no Safari/iPhone, a solicitação é disparada por uma ação do usuário.
-        function obterLocalizacaoEZoom(abrirPainelGrupo = true, usarFallbackIP = true) {
+        function obterLocalizacaoEZoom(abrirPainelGrupo = true) {
+            // A localização só é solicitada após uma ação explícita do usuário.
+            // Isso é importante para o Safari/iPhone.
             if (!window.isSecureContext && location.hostname !== 'localhost') {
-                mostrarErroLocalizacao('O Safari só libera a localização em uma conexão segura (HTTPS).', 'Abra este localizador pelo endereço HTTPS e tente novamente.');
-                if (usarFallbackIP) obterLocalizacaoPorIP(abrirPainelGrupo);
+                loading.style.display = 'none';
+                mostrarErroLocalizacao('Localização indisponível neste endereço.', 'Abra o localizador pelo endereço HTTPS. Você também pode pesquisar por endereço ou CEP.');
                 return;
             }
 
             if (!navigator.geolocation) {
-                if (usarFallbackIP) obterLocalizacaoPorIP(abrirPainelGrupo);
-                else mostrarErroLocalizacao('Seu navegador não oferece localização.', 'Digite sua cidade ou CEP para encontrar os grupos.');
+                loading.style.display = 'none';
+                mostrarErroLocalizacao('Seu navegador não oferece localização.', 'Você pode continuar normalmente pesquisando por endereço ou CEP.');
                 return;
             }
 
@@ -415,17 +429,20 @@
                 },
                 function(err) {
                     if (fab) fab.classList.remove('is-loading');
+                    loading.style.display = 'none';
                     console.warn('Falha na geolocalização:', err.code, err.message);
+
                     if (err.code === 1) {
-                        mostrarErroLocalizacao('A localização foi bloqueada.', 'No Safari, permita a localização para este site em Ajustes > Safari > Localização e tente novamente.');
+                        mostrarErroLocalizacao('Não foi possível acessar sua localização.', 'Tudo bem! Você pode continuar usando o localizador. Digite um endereço ou CEP na busca acima.');
+                    } else if (err.code === 2) {
+                        mostrarErroLocalizacao('Não conseguimos obter sua posição.', 'Você pode tentar novamente ou pesquisar um endereço ou CEP na busca acima.');
                     } else if (err.code === 3) {
-                        mostrarErroLocalizacao('A localização demorou para responder.', 'Tente novamente ou pesquise sua cidade/CEP acima.');
+                        mostrarErroLocalizacao('A localização demorou para responder.', 'Você pode tentar novamente ou pesquisar um endereço ou CEP na busca acima.');
                     } else {
-                        mostrarErroLocalizacao('Não conseguimos localizar você agora.', 'Tente novamente ou pesquise sua cidade/CEP acima.');
+                        mostrarErroLocalizacao('Não conseguimos localizar você agora.', 'Você pode continuar normalmente pesquisando por endereço ou CEP.');
                     }
-                    if (usarFallbackIP) obterLocalizacaoPorIP(abrirPainelGrupo);
                 },
-                { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 }
+                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
             );
         }
 
@@ -577,17 +594,21 @@
         enderecoInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') realizarBusca(enderecoInput.value); });
 
         function solicitarLocalizacaoPorClique() {
+            // O clique é a ação explícita que permite ao Safari apresentar o pedido de permissão.
             loading.style.display = 'flex';
             esconderErroLocalizacao();
-            obterLocalizacaoEZoom(true, true);
+            obterLocalizacaoEZoom(true);
         }
 
         document.getElementById('btn-gps').addEventListener('click', solicitarLocalizacaoPorClique);
         document.getElementById('gps-fab').addEventListener('click', solicitarLocalizacaoPorClique);
         document.getElementById('location-message-action').addEventListener('click', solicitarLocalizacaoPorClique);
+        document.getElementById('location-message-close').addEventListener('click', esconderErroLocalizacao);
 
         async function realizarBusca(texto) {
             if(!texto.trim()) return;
+            // Uma busca manual não depende do GPS e deve sempre poder ser usada.
+            esconderErroLocalizacao();
             loading.style.display = 'flex';
             sugestoesList.style.display = 'none';
 
