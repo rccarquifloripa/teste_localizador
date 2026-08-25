@@ -8,7 +8,6 @@
     <!-- Ícones e CSS do Leaflet -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- CSS do MarkerCluster (Para agrupar/desmembrar pinos na mesma localização) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
 
@@ -55,13 +54,16 @@
 
         #map { height: 100vh; width: 100vw; z-index: 1; }
         
+        /* Estilo do Foguinho otimizado sem sombras pesadas */
         .flame-pin {
-            color: var(--accent-light-blue); font-size: 34px;
-            text-shadow: 0px 0px 15px rgba(56, 189, 248, 0.8); cursor: pointer; transition: transform 0.2s;
+            color: var(--accent-light-blue);
+            text-shadow: 0px 0px 6px rgba(56, 189, 248, 0.6);
+            cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            transition: font-size 0.2s ease, transform 0.2s ease;
         }
-        .flame-pin:hover { transform: scale(1.1); }
+        .flame-pin:hover { transform: scale(1.15); }
 
-        /* Customização dos clusters de contagem de pinos no mesmo lugar */
         .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
             background-color: rgba(56, 189, 248, 0.3) !important;
         }
@@ -155,7 +157,7 @@
     <div class="search-container">
         <div class="search-wrapper">
             <i class="fas fa-crosshairs" id="btn-gps" style="cursor:pointer;" title="Usar minha localização"></i>
-            <input type="text" id="endereco" placeholder="Digite sua rua para achar um grupo...">
+            <input type="text" id="endereco" placeholder="Digite rua, cidade ou CEP (ex: 88010-000)...">
             <i class="fas fa-search" id="btn-buscar"></i>
         </div>
         <ul id="sugestoes-endereco" class="sugestoes-lista"></ul>
@@ -219,7 +221,6 @@
         </div>
     </div>
 
-    <!-- Scripts do Leaflet e do MarkerCluster -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -231,24 +232,52 @@
 
         const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW50b25pb2lyYW5lIiwiYSI6ImNtbXpsdnJzZjA5bXQycnB3bTZnN256OTcifQ.XHCq9FVuKZ2kWyazFD0p_w';
         
-        var map = L.map('map', { zoomControl: false }).setView([-27.595, -48.548], 11);
+        // Inicialização do Mapa Otimizada (Canvas ativado para evitar travamentos)
+        var map = L.map('map', { 
+            zoomControl: false, 
+            preferCanvas: true 
+        }).setView([-27.595, -48.548], 11);
+
         L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/navigation-night-v1/tiles/256/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`, {
             attribution: '© Mapbox', maxZoom: 20
         }).addTo(map);
 
-        // Grupo de Clusters com Spiderfy Ativado (Separa grupos com a mesma coordenada)
         var markersClusterGroup = L.markerClusterGroup({
             spiderfyOnMaxZoom: true,
             showCoverageOnHover: false,
             zoomToBoundsOnClick: true,
-            maxClusterRadius: 20 // Agrupa pinos que fiquem muito colados no zoom
+            maxClusterRadius: 25
         });
         map.addLayer(markersClusterGroup);
 
-        var flameIcon = L.divIcon({ html: '<i class="fas fa-fire flame-pin"></i>', className: '', iconSize: [34, 34], iconAnchor: [17, 34] });
+        // Função de tamanho dinâmico para os ícones com base no Zoom do Mapa
+        function getFlameIcon(zoomLevel) {
+            let size = 24; // Tamanho pequeno para visão distante
+            if (zoomLevel >= 12 && zoomLevel < 15) size = 32;
+            else if (zoomLevel >= 15) size = 42; // Tamanho grande para visão aproximada
+
+            return L.divIcon({ 
+                html: `<i class="fas fa-fire flame-pin" style="font-size: ${size}px;"></i>`, 
+                className: '', 
+                iconSize: [size, size], 
+                iconAnchor: [size / 2, size] 
+            });
+        }
+
         var gpsIcon = L.divIcon({ html: '<div class="gps-pulse"></div>', className: 'custom-gps-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
 
-        const linkPlanilha = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0wjHsXhDKkoVvTYAM1eN9RcReJf94pKepJpC61ROScImR1RqkpNvNvVgQQ6u8cUjmMwasV8-XSjlXa4/pub?output=csv";
+        // Evento que redimensiona os pinos dinamicamente ao mudar o Zoom
+        map.on('zoomend', function() {
+            const currentZoom = map.getZoom();
+            const newIcon = getFlameIcon(currentZoom);
+            markersClusterGroup.eachLayer(function(layer) {
+                if (layer.setIcon) {
+                    layer.setIcon(newIcon);
+                }
+            });
+        });
+
+        const linkPlanilha = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0wjHsXhDKkoVvTYAM1eN9RcReJf94pKepJpC61ROScImR1RqkpNvVgQQ6u8cUjmMwasV8-XSjlXa4/pub?output=csv";
 
         Papa.parse(linkPlanilha, {
             download: true,
@@ -264,6 +293,7 @@
         
         function plotarGruposNoMapa() {
             markersClusterGroup.clearLayers();
+            const initialIcon = getFlameIcon(map.getZoom());
 
             gruposDeOracao.forEach(grupo => {
                 const latStr = String(grupo.Latitude).replace(',', '.').trim();
@@ -273,7 +303,7 @@
                 const lon = parseFloat(lonStr);
                 
                 if(!isNaN(lat) && !isNaN(lon)) {
-                    const marker = L.marker([lat, lon], { icon: flameIcon });
+                    const marker = L.marker([lat, lon], { icon: initialIcon });
                     marker.on('click', () => abrirPainel(grupo, false));
                     markersClusterGroup.addLayer(marker);
                 }
@@ -366,13 +396,22 @@
             window.open(`https://wa.me/${numeroCentralRCC}?text=${msg}`, '_blank');
         }
 
+        // --- LÓGICA DE BUSCA UNIFICADA (ENDEREÇO OU CEP) ---
         const enderecoInput = document.getElementById('endereco');
         const sugestoesList = document.getElementById('sugestoes-endereco');
         let debounceTimer;
 
         enderecoInput.addEventListener('input', function() {
             clearTimeout(debounceTimer);
-            const query = this.value;
+            const query = this.value.trim();
+            
+            // Ignora autocompletar se o usuário estiver digitando um CEP puro
+            const cepLimpo = query.replace(/\D/g, '');
+            if (cepLimpo.length === 8 && query.length <= 9) {
+                sugestoesList.style.display = 'none';
+                return;
+            }
+
             if (query.length < 4) { sugestoesList.style.display = 'none'; return; }
 
             debounceTimer = setTimeout(async () => {
@@ -399,7 +438,7 @@
                         sugestoesList.style.display = 'block';
                     }
                 } catch (e) { console.error(e); }
-            }, 500);
+            }, 400);
         });
 
         document.addEventListener('click', (e) => {
@@ -419,8 +458,32 @@
             loading.style.display = 'flex';
             sugestoesList.style.display = 'none';
 
+            const cepLimpo = texto.replace(/\D/g, '');
+
+            // 1. Se for um CEP válido com 8 dígitos
+            if (cepLimpo.length === 8) {
+                try {
+                    // Tenta ViaCEP para resolver o endereço exato do CEP
+                    const resViaCep = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+                    const dataViaCep = await resViaCep.json();
+
+                    if (!dataViaCep.erro) {
+                        const enderecoCompleto = `${dataViaCep.logradouro}, ${dataViaCep.bairro}, ${dataViaCep.localidade} - ${dataViaCep.uf}`;
+                        buscarGeocodingMapbox(enderecoCompleto);
+                        return;
+                    }
+                } catch (e) {
+                    console.warn("Falha no ViaCEP, tentando geocodificação direta...");
+                }
+            }
+
+            // 2. Se for busca por texto padrão de endereço
+            buscarGeocodingMapbox(texto);
+        }
+
+        async function buscarGeocodingMapbox(queryTexto) {
             try {
-                const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(texto + ', Brasil')}.json?access_token=${MAPBOX_TOKEN}&limit=1`);
+                const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(queryTexto + ', Brasil')}.json?access_token=${MAPBOX_TOKEN}&limit=1`);
                 const data = await res.json();
                 
                 if (data.features.length > 0) {
@@ -428,12 +491,12 @@
                     const lon = data.features[0].geometry.coordinates[0];
                     processarLocalizacao(lat, lon, true);
                 } else {
-                    alert("Endereço não encontrado. Tente detalhar mais.");
+                    alert("Endereço ou CEP não encontrado. Tente detalhar mais.");
                     loading.style.display = 'none';
                 }
             } catch(e) {
                 loading.style.display = 'none';
-                alert("Erro na busca.");
+                alert("Erro ao realizar a busca.");
             }
         }
 
@@ -457,10 +520,10 @@
 
             loading.style.display = 'none';
 
-            map.flyTo([lat, lon], 15, { duration: 1.5 });
+            map.setView([lat, lon], 15);
 
             if (maisPerto && abrirCardAutomatico) {
-                setTimeout(() => abrirPainel(maisPerto, false), 1500);
+                setTimeout(() => abrirPainel(maisPerto, false), 500);
             }
         }
 
