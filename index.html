@@ -35,7 +35,7 @@
             display: flex; align-items: center; padding: 12px 15px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3);
         }
-        .search-wrapper i.fa-crosshairs { color: var(--accent-light-blue); font-size: 1.2rem; margin-right: 12px; }
+        .search-wrapper i.fa-crosshairs { color: var(--accent-light-blue); font-size: 1.2rem; margin-right: 12px; cursor: pointer; }
         .search-wrapper input { flex: 1; background: transparent; border: none; color: white; font-size: 1rem; outline: none; }
         .search-wrapper input::placeholder { color: var(--text-muted); }
         .search-wrapper i.fa-search { color: var(--accent-light-blue); font-size: 1.1rem; cursor: pointer; padding: 5px; }
@@ -224,7 +224,6 @@
         var flameIcon = L.divIcon({ html: '<i class="fas fa-fire flame-pin"></i>', className: '', iconSize: [34, 34], iconAnchor: [17, 34] });
         var gpsIcon = L.divIcon({ html: '<div class="gps-pulse"></div>', className: 'custom-gps-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
 
-        // LINK DIRETO DO GOOGLE SHEETS (FUNCIONARÁ PERFEITAMENTE NO GITHUB)
         const linkPlanilha = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0wjHsXhDKkoVvTYAM1eN9RcReJf94pKepJpC61ROScImR1RqkpNvVgQQ6u8cUjmMwasV8-XSjlXa4/pub?output=csv";
 
         Papa.parse(linkPlanilha, {
@@ -234,11 +233,8 @@
             transformHeader: function(header) { return header.trim(); },
             complete: function(resultados) {
                 gruposDeOracao = resultados.data.filter(g => g.Latitude && g.Longitude && g.Latitude.trim() !== "");
-                console.log(`Planilha lida com sucesso! ${gruposDeOracao.length} grupos encontrados.`);
                 plotarGruposNoMapa();
-            },
-            error: function(err) {
-                console.error("Erro ao ler a planilha: ", err);
+                obterLocalizacaoEZoom(false); // Solicita a localização após carregar os dados
             }
         });
         
@@ -258,11 +254,22 @@
             });
         }
 
-        map.locate({ setView: true, maxZoom: 14 });
-
-        map.on('locationfound', function(e) {
-            processarLocalizacao(e.latlng.lat, e.latlng.lng, false); 
-        });
+        function obterLocalizacaoEZoom(abrirPainelGrupo = true) {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        processarLocalizacao(lat, lon, abrirPainelGrupo);
+                    },
+                    function(err) {
+                        console.log("GPS recusado ou indisponível:", err);
+                        loading.style.display = 'none';
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            }
+        }
 
         const bottomSheet = document.getElementById('bottom-sheet');
         const leadCapture = document.getElementById('lead-capture');
@@ -308,7 +315,7 @@
             }
 
             bottomSheet.classList.add('active');
-            if(focarMapa) { map.setView([latGrupo - 0.005, lonGrupo], 14, { animate: true }); }
+            if(focarMapa) { map.setView([latGrupo - 0.005, lonGrupo], 15, { animate: true }); }
         }
 
         function toggleLeadForm() { leadCapture.classList.toggle('open'); }
@@ -378,7 +385,7 @@
 
         document.getElementById('btn-gps').addEventListener('click', () => {
             loading.style.display = 'flex';
-            map.locate({ setView: true, maxZoom: 14 });
+            obterLocalizacaoEZoom(true);
         });
 
         async function realizarBusca(texto) {
@@ -404,7 +411,7 @@
             }
         }
 
-        function processarLocalizacao(lat, lon, abrirCardAutomatico = true) {
+        function processarLocalizacao(lat, lon, abrirCardAutomatico = false) {
             userLocation = { lat, lon };
             
             if(userPin) map.removeLayer(userPin);
@@ -424,11 +431,11 @@
 
             loading.style.display = 'none';
 
+            // Ajusta o zoom focando na posição do usuário e nos grupos do entorno (zoom 15)
+            map.flyTo([lat, lon], 15, { duration: 1.5 });
+
             if (maisPerto && abrirCardAutomatico) {
-                map.flyTo([lat, lon], 13, { duration: 1.5 });
                 setTimeout(() => abrirPainel(maisPerto, false), 1500);
-            } else if (!abrirCardAutomatico) {
-                map.setView([lat, lon], 12); 
             }
         }
 
