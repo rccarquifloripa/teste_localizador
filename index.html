@@ -251,11 +251,11 @@
     <div class="mobile-hint"><i class="fas fa-location-dot"></i> Encontre grupos de oração perto de você</div>
     <button class="gps-fab" id="gps-fab" aria-label="Usar minha localização" title="Usar minha localização"><i class="fas fa-crosshairs"></i></button>
     <div class="location-message" id="location-message">
-        <strong id="location-message-title">Não conseguimos acessar sua localização.</strong>
-        <span id="location-message-text">Você pode permitir o acesso à localização nas configurações do Safari ou pesquisar sua cidade acima.</span>
+        <strong id="location-message-title">Não conseguimos usar o GPS.</strong>
+        <span id="location-message-text">Tudo bem: você pode pesquisar seu endereço ou CEP acima. Se quiser, tente a localização novamente.</span>
         <div class="location-message-actions">
-            <button type="button" id="location-message-action">Tentar novamente</button>
-            <button type="button" id="location-message-close" aria-label="Fechar aviso">Continuar sem localização</button>
+            <button type="button" id="location-message-action">Tentar GPS</button>
+            <button type="button" id="location-message-close" aria-label="Fechar aviso">Continuar</button>
         </div>
     </div>
 
@@ -273,7 +273,7 @@
 
     <div class="loading-overlay" id="loading">
         <i class="fas fa-circle-notch"></i>
-        <p>Buscando a graça mais próxima...</p>
+        <p>Encontrando grupos próximos...</p>
     </div>
 
     <div id="bottom-sheet" class="bottom-sheet">
@@ -403,18 +403,19 @@
         }
 
         // Geolocalização: no Safari/iPhone, a solicitação é disparada por uma ação do usuário.
-        function obterLocalizacaoEZoom(abrirPainelGrupo = true) {
-            // A localização só é solicitada após uma ação explícita do usuário.
-            // Isso é importante para o Safari/iPhone.
+        async function obterLocalizacaoEZoom(abrirPainelGrupo = true) {
+            // GPS é sempre opcional. O usuário só chega aqui depois de tocar no botão.
+            // Se o Safari bloquear/recusar a permissão, fazemos um fallback automático
+            // para a região aproximada pelo IP e o usuário continua navegando normalmente.
             if (!window.isSecureContext && location.hostname !== 'localhost') {
                 loading.style.display = 'none';
-                mostrarErroLocalizacao('Localização indisponível neste endereço.', 'Abra o localizador pelo endereço HTTPS. Você também pode pesquisar por endereço ou CEP.');
+                mostrarErroLocalizacao('O GPS não está disponível aqui.', 'Pesquise seu endereço ou CEP acima para encontrar os grupos mais próximos.');
                 return;
             }
 
             if (!navigator.geolocation) {
                 loading.style.display = 'none';
-                mostrarErroLocalizacao('Seu navegador não oferece localização.', 'Você pode continuar normalmente pesquisando por endereço ou CEP.');
+                mostrarErroLocalizacao('O GPS não está disponível neste navegador.', 'Pesquise seu endereço ou CEP acima para continuar.');
                 return;
             }
 
@@ -427,22 +428,33 @@
                     esconderErroLocalizacao();
                     processarLocalizacao(pos.coords.latitude, pos.coords.longitude, abrirPainelGrupo);
                 },
-                function(err) {
+                async function(err) {
                     if (fab) fab.classList.remove('is-loading');
                     loading.style.display = 'none';
                     console.warn('Falha na geolocalização:', err.code, err.message);
 
-                    if (err.code === 1) {
-                        mostrarErroLocalizacao('Não foi possível acessar sua localização.', 'Tudo bem! Você pode continuar usando o localizador. Digite um endereço ou CEP na busca acima.');
-                    } else if (err.code === 2) {
-                        mostrarErroLocalizacao('Não conseguimos obter sua posição.', 'Você pode tentar novamente ou pesquisar um endereço ou CEP na busca acima.');
-                    } else if (err.code === 3) {
-                        mostrarErroLocalizacao('A localização demorou para responder.', 'Você pode tentar novamente ou pesquisar um endereço ou CEP na busca acima.');
+                    // O usuário não fica preso ao GPS. Como ele pediu para encontrar
+                    // algo perto dele, usamos a região aproximada por IP como fallback.
+                    const encontrouPorIP = await obterLocalizacaoPorIP(false);
+
+                    if (encontrouPorIP) {
+                        mostrarErroLocalizacao(
+                            'Mostrando sua região aproximada.',
+                            'Para uma localização mais precisa, pesquise seu endereço ou CEP acima.'
+                        );
+                    } else if (err.code === 1) {
+                        mostrarErroLocalizacao(
+                            'Não conseguimos usar o GPS.',
+                            'Tudo bem! Pesquise seu endereço ou CEP acima para encontrar os grupos mais próximos.'
+                        );
                     } else {
-                        mostrarErroLocalizacao('Não conseguimos localizar você agora.', 'Você pode continuar normalmente pesquisando por endereço ou CEP.');
+                        mostrarErroLocalizacao(
+                            'Não conseguimos localizar você agora.',
+                            'Você pode tentar o GPS novamente ou pesquisar seu endereço ou CEP acima.'
+                        );
                     }
                 },
-                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
             );
         }
 
@@ -462,16 +474,17 @@
         async function obterLocalizacaoPorIP(abrirPainelGrupo = false) {
             try {
                 const res = await fetch("https://ipapi.co/json/", { headers: { Accept: "application/json" } });
+                if (!res.ok) throw new Error('Falha no serviço de localização aproximada');
                 const data = await res.json();
                 if (data.latitude && data.longitude) {
-                    processarLocalizacao(data.latitude, data.longitude, abrirPainelGrupo);
-                } else {
-                    loading.style.display = 'none';
+                    processarLocalizacao(Number(data.latitude), Number(data.longitude), abrirPainelGrupo);
+                    return true;
                 }
             } catch (e) {
                 console.log("Falha ao obter localização por IP:", e);
-                loading.style.display = 'none';
             }
+            loading.style.display = 'none';
+            return false;
         }
 
         const bottomSheet = document.getElementById('bottom-sheet');
