@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Grupos de Oração - RCC</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        :root {
+            --bg-app: #0f172a; 
+            --bg-sheet: #1e293b; 
+            --accent-light-blue: #38bdf8; 
+            --header-bg: #0b1120; 
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body, html { height: 100%; width: 100%; overflow: hidden; background-color: var(--bg-app); }
+
+        .top-header {
+            position: absolute; top: 0; left: 0; width: 100%; height: 90px;
+            background: linear-gradient(to bottom, rgba(15,23,42,0.95) 0%, rgba(15,23,42,0.5) 100%);
+            backdrop-filter: blur(8px); z-index: 1000;
+            display: flex; justify-content: space-between; align-items: flex-end; padding: 15px 20px; color: var(--text-main);
+        }
+        .header-title { font-size: 1.2rem; font-weight: 600; padding-bottom: 5px; color: var(--accent-light-blue); }
+
+        .search-container { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); width: 90%; z-index: 1000; }
+        .search-wrapper {
+            background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(10px); border-radius: 12px;
+            display: flex; align-items: center; padding: 12px 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+        .search-wrapper i.fa-crosshairs { color: var(--accent-light-blue); font-size: 1.2rem; margin-right: 12px; }
+        .search-wrapper input { flex: 1; background: transparent; border: none; color: white; font-size: 1rem; outline: none; }
+        .search-wrapper input::placeholder { color: var(--text-muted); }
+        .search-wrapper i.fa-search { color: var(--accent-light-blue); font-size: 1.1rem; cursor: pointer; padding: 5px; }
+
+        .sugestoes-lista {
+            position: absolute; top: 55px; left: 0; width: 100%;
+            background: var(--bg-sheet); border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 8px; z-index: 1000; list-style: none;
+            max-height: 200px; overflow-y: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: none;
+        }
+        .sugestoes-lista li { padding: 12px 15px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text-main); font-size: 0.9rem; }
+        .sugestoes-lista li:hover { background-color: rgba(56, 189, 248, 0.1); color: var(--accent-light-blue); }
+
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+        
+        .flame-pin {
+            color: var(--accent-light-blue); font-size: 34px;
+            text-shadow: 0px 0px 15px rgba(56, 189, 248, 0.8); cursor: pointer; transition: transform 0.2s;
+        }
+        .flame-pin:hover { transform: scale(1.1); }
+
+        .custom-gps-icon { background: none; border: none; }
+        .gps-pulse {
+            background-color: #3b82f6; border-radius: 50%; width: 18px; height: 18px;
+            border: 3px solid #ffffff; box-shadow: 0 0 0 rgba(59, 130, 246, 0.4); animation: pulse-blue 2s infinite;
+        }
+        @keyframes pulse-blue {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+
+        .loading-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15,23,42,0.8); z-index: 3000;
+            display: none; justify-content: center; align-items: center; flex-direction: column; color: var(--accent-light-blue);
+        }
+        .loading-overlay i { font-size: 3rem; margin-bottom: 10px; animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .bottom-sheet {
+            position: absolute; bottom: -100%; left: 0; width: 100%; height: 80vh;
+            background: var(--bg-sheet); color: var(--text-main); z-index: 2000;
+            border-radius: 20px 20px 0 0; box-shadow: 0 -5px 30px rgba(0,0,0,0.6);
+            transition: bottom 0.3s cubic-bezier(0.1, 0.8, 0.3, 1); display: flex; flex-direction: column;
+        }
+        .bottom-sheet.active { bottom: 0; }
+        .sheet-content { overflow-y: auto; padding-bottom: 30px; }
+        .sheet-top { padding: 20px; }
+        .sheet-top-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;}
+        .sheet-title h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; color: var(--accent-light-blue); }
+        .sheet-title p { color: var(--text-muted); font-size: 0.95rem; line-height: 1.4; }
+        
+        .distance-badge {
+            background: rgba(56, 189, 248, 0.1); color: var(--accent-light-blue);
+            padding: 5px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: 600; display: inline-block; margin-top: 8px;
+        }
+
+        .transport-icons { display: flex; gap: 15px; justify-content: flex-end; }
+        .transport-icons a {
+            width: 45px; height: 45px; border-radius: 50%; border: 1.5px solid var(--accent-light-blue);
+            display: flex; justify-content: center; align-items: center; color: var(--accent-light-blue); font-size: 1.2rem;
+            text-decoration: none; cursor: pointer; background: rgba(56, 189, 248, 0.05);
+        }
+
+        .contact-list { padding: 0 20px 15px; }
+        .contact-item { display: flex; align-items: center; gap: 15px; margin-bottom: 12px; color: var(--text-muted); font-size: 0.95rem; }
+        .contact-item i { font-size: 1.1rem; width: 20px; text-align: center; color: var(--accent-light-blue); }
+
+        .section-header { background-color: var(--header-bg); color: var(--accent-light-blue); font-weight: 600; padding: 12px 20px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .section-body { padding: 15px 20px; color: var(--text-main); font-size: 0.95rem; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+        .btn-group { padding: 20px; text-align: center; }
+        .btn-solid {
+            width: 100%; padding: 15px; border-radius: 25px; background: var(--accent-light-blue); border: none;
+            color: var(--bg-app); font-weight: 700; font-size: 1rem; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px;
+        }
+
+        .lead-capture {
+            position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); width: 90%;
+            background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(15px); border-radius: 20px;
+            border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 5px 25px rgba(0,0,0,0.5); z-index: 1000; padding: 15px 20px; transition: all 0.3s ease;
+        }
+        .lead-header { display: flex; justify-content: space-between; align-items: center; color: var(--text-main); font-weight: 600; font-size: 0.95rem; cursor: pointer; }
+        .lead-header i.fa-headset { color: var(--accent-light-blue); font-size: 1.2rem; margin-right: 10px; }
+        .lead-header i.fa-chevron-up { transition: transform 0.3s; color: var(--text-muted); }
+        .lead-capture.open .lead-header i.fa-chevron-up { transform: rotate(180deg); }
+        .lead-body { display: none; flex-direction: column; gap: 12px; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; }
+        .lead-capture.open .lead-body { display: flex; }
+        .lead-input { background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 12px 15px; border-radius: 12px; font-size: 0.95rem; outline: none; }
+        .lead-input::placeholder { color: var(--text-muted); }
+        .lead-input:focus { border-color: var(--accent-light-blue); }
+        .lead-btn { background: var(--accent-light-blue); color: var(--bg-app); border: none; padding: 12px; border-radius: 12px; font-weight: 700; font-size: 0.95rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="top-header">
+        <div class="header-title"><i class="fas fa-dove"></i> Grupos de Oração RCC</div>
+        <img src="https://via.placeholder.com/100x40/0f172a/38bdf8?text=Sua+Logo" alt="Logo" style="height: 35px; border-radius: 5px;">
+    </div>
+
+    <div class="search-container">
+        <div class="search-wrapper">
+            <i class="fas fa-crosshairs" id="btn-gps" style="cursor:pointer;" title="Usar minha localização"></i>
+            <input type="text" id="endereco" placeholder="Digite sua rua para achar um grupo...">
+            <i class="fas fa-search" id="btn-buscar"></i>
+        </div>
+        <ul id="sugestoes-endereco" class="sugestoes-lista"></ul>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="lead-capture" id="lead-capture">
+        <div class="lead-header" onclick="toggleLeadForm()">
+            <div><i class="fas fa-headset"></i> Não achou? Deixe seu contato!</div>
+            <i class="fas fa-chevron-up"></i>
+        </div>
+        <div class="lead-body">
+            <input type="text" id="lead-nome" class="lead-input" placeholder="Seu nome completo">
+            <input type="tel" id="lead-tel" class="lead-input" placeholder="Seu WhatsApp (com DDD)">
+            <button class="lead-btn" onclick="enviarContato()">Enviar meu Contato <i class="fas fa-paper-plane" style="margin-left: 5px;"></i></button>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loading">
+        <i class="fas fa-circle-notch"></i>
+        <p>Buscando a graça mais próxima...</p>
+    </div>
+
+    <div id="bottom-sheet" class="bottom-sheet">
+        <div style="padding: 15px 20px 0; text-align: center;">
+            <i class="fas fa-chevron-down" style="font-size: 1.5rem; cursor: pointer; color: var(--text-muted);" onclick="fecharPainel()"></i>
+        </div>
+        
+        <div class="sheet-content">
+            <div class="sheet-top">
+                <div class="sheet-top-header">
+                    <div class="sheet-title">
+                        <h2 id="sheet-nome">Nome do Grupo</h2>
+                        <p id="sheet-endereco">Endereço completo</p>
+                        <div class="distance-badge" id="sheet-distancia"><i class="fas fa-route"></i> 0.0 km de você</div>
+                    </div>
+                </div>
+
+                <div class="transport-icons">
+                    <a href="#" id="link-maps" target="_blank" title="Ver rota no GPS"><i class="fas fa-car"></i></a>
+                    <a href="#" id="link-whats" target="_blank" title="Falar no WhatsApp"><i class="fab fa-whatsapp"></i></a>
+                </div>
+            </div>
+
+            <div class="contact-list">
+                <div class="contact-item"><i class="fas fa-user"></i> <span id="sheet-coord">Coordenador</span></div>
+                <div class="contact-item"><i class="fas fa-phone-alt"></i> <span id="sheet-tel">Telefone</span></div>
+                <div class="contact-item"><i class="fas fa-church"></i> <span id="sheet-paroquia">Paróquia</span></div>
+                <div class="contact-item"><i class="fas fa-map-marker-alt"></i> <span id="sheet-forania">Forania</span></div>
+            </div>
+
+            <div class="section-header">Horário do Encontro</div>
+            <div class="section-body" id="sheet-reuniao">Segunda-feira / 20H</div>
+
+            <div class="btn-group">
+                <button class="btn-solid" onclick="reportarErro()">
+                    <i class="fas fa-exclamation-triangle"></i> Reportar erro neste Grupo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <script>
+        let gruposDeOracao = []; 
+        let userLocation = null;
+        let userPin = null;
+        const marcadores = [];
+
+        const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW50b25pb2lyYW5lIiwiYSI6ImNtbXpsdnJzZjA5bXQycnB3bTZnN256OTcifQ.XHCq9FVuKZ2kWyazFD0p_w';
+        
+        var map = L.map('map', { zoomControl: false }).setView([-27.595, -48.548], 11);
+        L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/navigation-night-v1/tiles/256/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`, {
+            attribution: '© Mapbox', maxZoom: 20
+        }).addTo(map);
+
+        var flameIcon = L.divIcon({ html: '<i class="fas fa-fire flame-pin"></i>', className: '', iconSize: [34, 34], iconAnchor: [17, 34] });
+        var gpsIcon = L.divIcon({ html: '<div class="gps-pulse"></div>', className: 'custom-gps-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
+
+        // LINK DIRETO DO GOOGLE SHEETS (FUNCIONARÁ PERFEITAMENTE NO GITHUB)
+        const linkPlanilha = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0wjHsXhDKkoVvTYAM1eN9RcReJf94pKepJpC61ROScImR1RqkpNvVgQQ6u8cUjmMwasV8-XSjlXa4/pub?output=csv";
+
+        Papa.parse(linkPlanilha, {
+            download: true,
+            header: true,
+            skipEmptyLines: true,
+            transformHeader: function(header) { return header.trim(); },
+            complete: function(resultados) {
+                gruposDeOracao = resultados.data.filter(g => g.Latitude && g.Longitude && g.Latitude.trim() !== "");
+                console.log(`Planilha lida com sucesso! ${gruposDeOracao.length} grupos encontrados.`);
+                plotarGruposNoMapa();
+            },
+            error: function(err) {
+                console.error("Erro ao ler a planilha: ", err);
+            }
+        });
+        
+        function plotarGruposNoMapa() {
+            gruposDeOracao.forEach(grupo => {
+                const latStr = String(grupo.Latitude).replace(',', '.').trim();
+                const lonStr = String(grupo.Longitude).replace(',', '.').trim();
+
+                const lat = parseFloat(latStr);
+                const lon = parseFloat(lonStr);
+                
+                if(!isNaN(lat) && !isNaN(lon)) {
+                    const marker = L.marker([lat, lon], { icon: flameIcon }).addTo(map);
+                    marker.on('click', () => abrirPainel(grupo, false));
+                    marcadores.push({ marker, grupo });
+                }
+            });
+        }
+
+        map.locate({ setView: true, maxZoom: 14 });
+
+        map.on('locationfound', function(e) {
+            processarLocalizacao(e.latlng.lat, e.latlng.lng, false); 
+        });
+
+        const bottomSheet = document.getElementById('bottom-sheet');
+        const leadCapture = document.getElementById('lead-capture');
+        const loading = document.getElementById('loading');
+
+        function fecharPainel() { 
+            bottomSheet.classList.remove('active'); 
+            setTimeout(() => { leadCapture.style.display = 'block'; }, 300);
+        }
+        map.on('click', fecharPainel);
+
+        function abrirPainel(grupo, focarMapa = true) {
+            leadCapture.style.display = 'none'; 
+
+            document.getElementById('sheet-nome').textContent = grupo.Nome || "Grupo de Oração";
+            document.getElementById('sheet-endereco').innerHTML = `${grupo['Endereço'] || ''}<br>${grupo.Cidade || ''}`;
+            document.getElementById('sheet-coord').textContent = `Coordenador(a): ${grupo.Coordenador || 'Não informado'}`;
+            document.getElementById('sheet-tel').textContent = grupo.Telefone || 'Não informado';
+            document.getElementById('sheet-paroquia').textContent = `Paróquia: ${grupo['Paróquia'] || 'Não informada'}`;
+            document.getElementById('sheet-forania').textContent = `Forania: ${grupo.Forania || 'Não informada'}`;
+            document.getElementById('sheet-reuniao').textContent = grupo['Reunião'] || 'Horário a definir';
+
+            let telLimpo = grupo.Telefone ? String(grupo.Telefone).replace(/\D/g, '') : '';
+            const msg = encodeURIComponent(`Olá! Encontrei o grupo "${grupo.Nome}" no mapa da RCC e gostaria de mais informações.`);
+            document.getElementById('link-whats').href = telLimpo ? `https://wa.me/${telLimpo}?text=${msg}` : '#';
+
+            const dest = encodeURIComponent(`${grupo['Endereço'] || ''}, ${grupo.Cidade || ''}`);
+            let mapUrl = `https://maps.google.com/maps?daddr=${dest}`;
+            if(userLocation) mapUrl += `&saddr=${userLocation.lat},${userLocation.lon}`;
+            document.getElementById('link-maps').href = mapUrl;
+
+            const distBadge = document.getElementById('sheet-distancia');
+            
+            const latGrupo = parseFloat(String(grupo.Latitude).replace(',', '.'));
+            const lonGrupo = parseFloat(String(grupo.Longitude).replace(',', '.'));
+
+            if (userLocation && !isNaN(latGrupo) && !isNaN(lonGrupo)) {
+                const dist = calcularDistancia(userLocation.lat, userLocation.lon, latGrupo, lonGrupo);
+                distBadge.innerHTML = `<i class="fas fa-route"></i> ${dist.toFixed(1)} km de você`;
+                distBadge.style.display = 'inline-block';
+            } else {
+                distBadge.style.display = 'none';
+            }
+
+            bottomSheet.classList.add('active');
+            if(focarMapa) { map.setView([latGrupo - 0.005, lonGrupo], 14, { animate: true }); }
+        }
+
+        function toggleLeadForm() { leadCapture.classList.toggle('open'); }
+
+        function enviarContato() {
+            const nome = document.getElementById('lead-nome').value;
+            const tel = document.getElementById('lead-tel').value;
+
+            if(!nome || !tel) { alert("Por favor, preencha nome e WhatsApp."); return; }
+
+            const numeroCentralRCC = "5548999999999"; 
+            const msg = encodeURIComponent(`A paz de Cristo! Gostaria de ajuda para encontrar um Grupo de Oração.\n\n*Meu nome:* ${nome}\n*Meu contato:* ${tel}`);
+            window.open(`https://wa.me/${numeroCentralRCC}?text=${msg}`, '_blank');
+            document.getElementById('lead-nome').value = ''; document.getElementById('lead-tel').value = '';
+            toggleLeadForm();
+        }
+
+        function reportarErro() {
+            const nomeGrupo = document.getElementById('sheet-nome').textContent;
+            const numeroCentralRCC = "5548999999999"; 
+            const msg = encodeURIComponent(`A paz! Quero reportar uma atualização/erro no Grupo de Oração: *${nomeGrupo}*`);
+            window.open(`https://wa.me/${numeroCentralRCC}?text=${msg}`, '_blank');
+        }
+
+        const enderecoInput = document.getElementById('endereco');
+        const sugestoesList = document.getElementById('sugestoes-endereco');
+        let debounceTimer;
+
+        enderecoInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            const query = this.value;
+            if (query.length < 4) { sugestoesList.style.display = 'none'; return; }
+
+            debounceTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query + ', Santa Catarina, Brasil')}&limit=4`);
+                    const data = await res.json();
+                    sugestoesList.innerHTML = '';
+
+                    if (data.features.length > 0) {
+                        data.features.forEach(feature => {
+                            const p = feature.properties;
+                            if (!p.name) return;
+                            const text = `${p.name}${p.district ? ', '+p.district : ''} - ${p.city || ''}`;
+                            
+                            const li = document.createElement('li');
+                            li.innerHTML = `<i class="fas fa-map-marker-alt" style="margin-right:10px; color:var(--accent-light-blue);"></i> ${text}`;
+                            li.onclick = () => {
+                                enderecoInput.value = text;
+                                sugestoesList.style.display = 'none';
+                                realizarBusca(text);
+                            };
+                            sugestoesList.appendChild(li);
+                        });
+                        sugestoesList.style.display = 'block';
+                    }
+                } catch (e) { console.error(e); }
+            }, 500);
+        });
+
+        document.addEventListener('click', (e) => {
+            if (e.target !== enderecoInput) sugestoesList.style.display = 'none';
+        });
+
+        document.getElementById('btn-buscar').addEventListener('click', () => realizarBusca(enderecoInput.value));
+        enderecoInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') realizarBusca(enderecoInput.value); });
+
+        document.getElementById('btn-gps').addEventListener('click', () => {
+            loading.style.display = 'flex';
+            map.locate({ setView: true, maxZoom: 14 });
+        });
+
+        async function realizarBusca(texto) {
+            if(!texto.trim()) return;
+            loading.style.display = 'flex';
+            sugestoesList.style.display = 'none';
+
+            try {
+                const res = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(texto + ', Brasil')}.json?access_token=${MAPBOX_TOKEN}&limit=1`);
+                const data = await res.json();
+                
+                if (data.features.length > 0) {
+                    const lat = data.features[0].geometry.coordinates[1];
+                    const lon = data.features[0].geometry.coordinates[0];
+                    processarLocalizacao(lat, lon, true);
+                } else {
+                    alert("Endereço não encontrado. Tente detalhar mais.");
+                    loading.style.display = 'none';
+                }
+            } catch(e) {
+                loading.style.display = 'none';
+                alert("Erro na busca.");
+            }
+        }
+
+        function processarLocalizacao(lat, lon, abrirCardAutomatico = true) {
+            userLocation = { lat, lon };
+            
+            if(userPin) map.removeLayer(userPin);
+            userPin = L.marker([lat, lon], { icon: gpsIcon }).addTo(map);
+
+            let maisPerto = null;
+            let menorDist = Infinity;
+
+            gruposDeOracao.forEach(grupo => {
+                const latGrupo = parseFloat(String(grupo.Latitude).replace(',', '.'));
+                const lonGrupo = parseFloat(String(grupo.Longitude).replace(',', '.'));
+                if (!isNaN(latGrupo) && !isNaN(lonGrupo)) {
+                    const dist = calcularDistancia(lat, lon, latGrupo, lonGrupo);
+                    if (dist < menorDist) { menorDist = dist; maisPerto = grupo; }
+                }
+            });
+
+            loading.style.display = 'none';
+
+            if (maisPerto && abrirCardAutomatico) {
+                map.flyTo([lat, lon], 13, { duration: 1.5 });
+                setTimeout(() => abrirPainel(maisPerto, false), 1500);
+            } else if (!abrirCardAutomatico) {
+                map.setView([lat, lon], 12); 
+            }
+        }
+
+        function calcularDistancia(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+    </script>
+</body>
+</html>
