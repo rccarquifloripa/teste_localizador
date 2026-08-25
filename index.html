@@ -54,7 +54,6 @@
 
         #map { height: 100vh; width: 100vw; z-index: 1; }
         
-        /* Estilo do Foguinho otimizado sem sombras pesadas */
         .flame-pin {
             color: var(--accent-light-blue);
             text-shadow: 0px 0px 6px rgba(56, 189, 248, 0.6);
@@ -232,7 +231,6 @@
 
         const MAPBOX_TOKEN = 'pk.eyJ1IjoiYW50b25pb2lyYW5lIiwiYSI6ImNtbXpsdnJzZjA5bXQycnB3bTZnN256OTcifQ.XHCq9FVuKZ2kWyazFD0p_w';
         
-        // Inicialização do Mapa Otimizada (Canvas ativado para evitar travamentos)
         var map = L.map('map', { 
             zoomControl: false, 
             preferCanvas: true 
@@ -250,11 +248,10 @@
         });
         map.addLayer(markersClusterGroup);
 
-        // Função de tamanho dinâmico para os ícones com base no Zoom do Mapa
         function getFlameIcon(zoomLevel) {
-            let size = 24; // Tamanho pequeno para visão distante
+            let size = 24;
             if (zoomLevel >= 12 && zoomLevel < 15) size = 32;
-            else if (zoomLevel >= 15) size = 42; // Tamanho grande para visão aproximada
+            else if (zoomLevel >= 15) size = 42;
 
             return L.divIcon({ 
                 html: `<i class="fas fa-fire flame-pin" style="font-size: ${size}px;"></i>`, 
@@ -266,7 +263,6 @@
 
         var gpsIcon = L.divIcon({ html: '<div class="gps-pulse"></div>', className: 'custom-gps-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
 
-        // Evento que redimensiona os pinos dinamicamente ao mudar o Zoom
         map.on('zoomend', function() {
             const currentZoom = map.getZoom();
             const newIcon = getFlameIcon(currentZoom);
@@ -310,6 +306,7 @@
             });
         }
 
+        // TENTA GEOLOCALIZAÇÃO E APLICA FALLBACK POR IP SE O NAVEGADOR DO DESKTOP BLOQUEAR
         function obterLocalizacaoEZoom(abrirPainelGrupo = true) {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
@@ -319,11 +316,29 @@
                         processarLocalizacao(lat, lon, abrirPainelGrupo);
                     },
                     function(err) {
-                        console.log("GPS recusado ou indisponível:", err);
-                        loading.style.display = 'none';
+                        console.log("GPS do navegador bloqueado ou falhou. Tentando fallback por IP...");
+                        obterLocalizacaoPorIP(abrirPainelGrupo);
                     },
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                    { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
                 );
+            } else {
+                obterLocalizacaoPorIP(abrirPainelGrupo);
+            }
+        }
+
+        // FALLBACK VIA IP: Garante que o desktop ache a região aproximada mesmo sem permissão de GPS
+        async function obterLocalizacaoPorIP(abrirPainelGrupo = false) {
+            try {
+                const res = await fetch("https://ipapi.co/json/");
+                const data = await res.json();
+                if (data.latitude && data.longitude) {
+                    processarLocalizacao(data.latitude, data.longitude, abrirPainelGrupo);
+                } else {
+                    loading.style.display = 'none';
+                }
+            } catch (e) {
+                console.log("Falha ao obter localização por IP:", e);
+                loading.style.display = 'none';
             }
         }
 
@@ -396,7 +411,6 @@
             window.open(`https://wa.me/${numeroCentralRCC}?text=${msg}`, '_blank');
         }
 
-        // --- LÓGICA DE BUSCA UNIFICADA (ENDEREÇO OU CEP) ---
         const enderecoInput = document.getElementById('endereco');
         const sugestoesList = document.getElementById('sugestoes-endereco');
         let debounceTimer;
@@ -405,7 +419,6 @@
             clearTimeout(debounceTimer);
             const query = this.value.trim();
             
-            // Ignora autocompletar se o usuário estiver digitando um CEP puro
             const cepLimpo = query.replace(/\D/g, '');
             if (cepLimpo.length === 8 && query.length <= 9) {
                 sugestoesList.style.display = 'none';
@@ -460,10 +473,8 @@
 
             const cepLimpo = texto.replace(/\D/g, '');
 
-            // 1. Se for um CEP válido com 8 dígitos
             if (cepLimpo.length === 8) {
                 try {
-                    // Tenta ViaCEP para resolver o endereço exato do CEP
                     const resViaCep = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
                     const dataViaCep = await resViaCep.json();
 
@@ -477,7 +488,6 @@
                 }
             }
 
-            // 2. Se for busca por texto padrão de endereço
             buscarGeocodingMapbox(texto);
         }
 
